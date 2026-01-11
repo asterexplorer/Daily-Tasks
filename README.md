@@ -1,8 +1,11 @@
-# app
+# Daily tasks
 
-A new Flutter project.
+create by aster explorer
 
 ## Getting Started
+
+Mail iD :Test@gmail.com
+Password :test123
 
 This project is a starting point for a Flutter application.
 
