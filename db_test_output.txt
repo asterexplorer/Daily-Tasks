@@ -1,0 +1,9 @@
+00:00 +0: loading C:/Users/aster/OneDrive/Documents/app developement/app/test/database_service_test.dart
+test/database_service_test.dart:45:11: Error: The method 'call' isn't defined for the class 'User?'.
+ - 'User' is from 'package:app/models/user_model.dart' ('lib/models/user_model.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'call'.
+      fail('Should throw exception');
+          ^
+00:00 +0 -1: loading C:/Users/aster/OneDrive/Documents/app developement/app/test/database_service_test.dart [E]
+  Failed to load "C:/Users/aster/OneDrive/Documents/app developement/app/test/database_service_test.dart": Compilation failed for testPath=C:/Users/aster/OneDrive/Documents/app developement/app/test/database_service_test.dart
+00:00 +0 -1: Some tests failed.
