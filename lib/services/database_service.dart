@@ -23,7 +23,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'tasks.db');
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE tasks(
@@ -31,7 +31,9 @@ class DatabaseService {
             title TEXT,
             isCompleted INTEGER,
             timestamp TEXT,
-            mood TEXT
+            mood TEXT,
+            priority TEXT,
+            category TEXT
           )
         ''');
         await db.execute('''
@@ -44,7 +46,6 @@ class DatabaseService {
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          // Add mood column to existing table
           await db.execute(
               'ALTER TABLE tasks ADD COLUMN mood TEXT DEFAULT "default"');
         }
@@ -57,9 +58,16 @@ class DatabaseService {
             )
           ''');
         }
+        if (oldVersion < 4) {
+          await db.execute(
+              'ALTER TABLE tasks ADD COLUMN priority TEXT DEFAULT "Medium"');
+          await db.execute(
+              'ALTER TABLE tasks ADD COLUMN category TEXT DEFAULT "Personal"');
+        }
       },
     );
   }
+
 
   Future<void> insertTask(Task task) async {
     final db = await database;

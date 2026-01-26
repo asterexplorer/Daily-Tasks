@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:uuid/uuid.dart';
 import '../models/task.dart';
 import '../services/database_service.dart';
+import '../utils/task_theme.dart';
 import '../widgets/task_tile.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -31,6 +32,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // Clock State
   String _timeString = '';
   Timer? _timer;
+
+  // Filter State
+  String _selectedCategory = 'All';
 
   @override
   void initState() {
@@ -74,10 +78,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Task> get _filteredTasks {
-    if (_selectedDay == null) return _tasks;
-    return _tasks.where((task) {
-      return isSameDay(task.timestamp, _selectedDay);
-    }).toList();
+    List<Task> filtered = _tasks;
+    if (_selectedDay != null) {
+      filtered = filtered.where((task) => isSameDay(task.timestamp, _selectedDay)).toList();
+    }
+    if (_selectedCategory != 'All') {
+      filtered = filtered.where((task) => task.category == _selectedCategory).toList();
+    }
+    return filtered;
   }
 
   // ... (keep _sortTasks, _addTask, _toggleTaskType, _deleteTask, _showAddTaskModal same or similar, assuming they are not in this chunk range)
@@ -94,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _addTask(String title, {String mood = 'default'}) async {
+  Future<void> _addTask(String title, {String mood = 'default', String priority = 'Medium', String category = 'Personal'}) async {
     if (title.isEmpty) return;
 
     final newTask = Task(
@@ -102,6 +110,8 @@ class _HomeScreenState extends State<HomeScreen> {
       title: title,
       timestamp: _selectedDay ?? DateTime.now(),
       mood: mood,
+      priority: priority,
+      category: category,
     );
 
     await _databaseService.insertTask(newTask);
@@ -118,155 +128,263 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _deleteTask(Task task) async {
-    await _databaseService.deleteTask(task.id);
+    // Optimistically remove from list
     setState(() {
       _tasks.removeWhere((t) => t.id == task.id);
     });
+
+    // Show undo snackbar
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Task deleted', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.black87,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        action: SnackBarAction(
+          label: 'UNDO',
+          textColor: Theme.of(context).colorScheme.primary,
+          onPressed: () {
+            // Undo action: just add it back to state, we haven't deleted from DB yet
+            setState(() {
+              _tasks.add(task);
+              _sortTasks();
+            });
+          },
+        ),
+      ),
+    ).closed.then((reason) {
+      if (reason != SnackBarClosedReason.action) {
+        // If not undone, actually delete from DB
+        _databaseService.deleteTask(task.id);
+      }
+    });
   }
 
-  Future<void> _editTask(Task task, String newTitle, String newMood) async {
+  Future<void> _editTask(Task task, String newTitle, String newMood, String newPriority, String newCategory) async {
     task.title = newTitle;
     task.mood = newMood;
-    // Keep the original timestamp or update it? Usually editing keeps original time
-    // slightly problematic if sorting by time, but let's keep it.
+    task.priority = newPriority;
+    task.category = newCategory;
     await _databaseService.updateTask(task);
     _loadTasks();
   }
 
   void _showAddTaskModal(BuildContext context, {Task? taskToEdit}) {
     String selectedMood = taskToEdit?.mood ?? 'default';
+    String selectedPriority = taskToEdit?.priority ?? 'Medium';
+    String selectedCategory = taskToEdit?.category ?? 'Personal';
     _taskController.text = taskToEdit?.title ?? '';
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Padding(
+        builder: (context, setModalState) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          ),
           padding: EdgeInsets.only(
               bottom: MediaQuery.of(context).viewInsets.bottom,
               left: 24,
               right: 24,
-              top: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                taskToEdit == null ? 'New Task' : 'Edit Task',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF2D3142),
+              top: 32),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      taskToEdit == null ? 'New Task' : 'Edit Task',
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF2D3142),
+                          ),
                     ),
-              ),
-              const SizedBox(height: 24),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: MoodTheme.gradients.keys.map((mood) {
-                    final isSelected = selectedMood == mood;
-                    return GestureDetector(
-                      onTap: () => setState(() => selectedMood = mood),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(context),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: _taskController,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                  decoration: InputDecoration(
+                    hintText: 'What needs to be done?',
+                    hintStyle: TextStyle(color: Colors.grey[400]),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[100],
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Priority Selection
+                Text('Priority', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: TaskTheme.priorities.map((p) {
+                    final isSelected = selectedPriority == p;
+                    return InkWell(
+                      onTap: () => setModalState(() => selectedPriority = p),
                       child: Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isSelected
-                                ? Theme.of(context).primaryColor
-                                : Colors.transparent,
-                            width: 2,
-                          ),
+                          color: isSelected ? TaskTheme.priorityColors[p] : Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: isSelected ? [
+                            BoxShadow(
+                              color: TaskTheme.priorityColors[p]!.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            )
+                          ] : null,
                         ),
-                        child: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: MoodTheme.gradients[mood],
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
+                        child: Text(
+                          p,
+                          style: TextStyle(
+                            color: isSelected ? Colors.white : Colors.grey[600],
+                            fontWeight: FontWeight.bold,
                           ),
-                          child: isSelected
-                              ? Icon(
-                                  Icons.check,
-                                  color: MoodTheme.getTextColor(mood),
-                                )
-                              : null,
                         ),
                       ),
                     );
                   }).toList(),
                 ),
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _taskController,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'What needs to be done?',
-                  hintStyle: TextStyle(color: Colors.grey[400]),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
+                const SizedBox(height: 24),
+                // Category Selection
+                Text('Category', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: TaskTheme.categories.map((c) {
+                    final isSelected = selectedCategory == c;
+                    return InkWell(
+                      onTap: () => setModalState(() => selectedCategory = c),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isSelected ? TaskTheme.categoryColors[c] : Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              TaskTheme.categoryIcons[c],
+                              size: 18,
+                              color: isSelected ? Colors.white : Colors.grey[600],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              c,
+                              style: TextStyle(
+                                color: isSelected ? Colors.white : Colors.grey[600],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 24),
+                // Mood Selection
+                Text('Style', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: MoodTheme.gradients.keys.map((mood) {
+                      final isSelected = selectedMood == mood;
+                      return GestureDetector(
+                        onTap: () => setModalState(() => selectedMood = mood),
+                        child: Container(
+                          margin: const EdgeInsets.only(right: 12),
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected
+                                  ? Theme.of(context).primaryColor
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: MoodTheme.gradients[mood],
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: isSelected
+                                ? Icon(
+                                    Icons.check,
+                                    color: MoodTheme.getTextColor(mood),
+                                  )
+                                : null,
+                          ),
+                        ),
+                      );
+                    }).toList(),
                   ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 ),
-                onSubmitted: (value) {
-                  if (taskToEdit != null) {
-                    _editTask(taskToEdit, value, selectedMood);
-                  } else {
-                    _addTask(value, mood: selectedMood);
-                  }
-                  Navigator.pop(context);
-                },
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  if (taskToEdit != null) {
-                    _editTask(taskToEdit, _taskController.text, selectedMood);
-                  } else {
-                    _addTask(_taskController.text, mood: selectedMood);
-                  }
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: () {
+                    if (taskToEdit != null) {
+                      _editTask(taskToEdit, _taskController.text, selectedMood, selectedPriority, selectedCategory);
+                    } else {
+                      _addTask(_taskController.text, mood: selectedMood, priority: selectedPriority, category: selectedCategory);
+                    }
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    elevation: 4,
+                    shadowColor: Theme.of(context).primaryColor.withOpacity(0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: Text(
+                    taskToEdit == null ? 'Create Task' : 'Update Task',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                 ),
-                child: Text(
-                  taskToEdit == null ? 'Add Task' : 'Save Changes',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
       ),
     ).whenComplete(() {
-      // Clear controller when closed if it was an add action, but for edit we might want to be careful
-      // actually _addTask clears it, so we should be fine.
-      // But if we cancel the modal without saving, we might want to clear.
       _taskController.clear();
     });
   }
@@ -307,7 +425,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 300,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.purpleAccent.withValues(alpha: 0.3),
+                    color: Colors.purpleAccent.withOpacity(0.3),
                   ),
                 ),
               ),
@@ -322,7 +440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 200,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.cyanAccent.withValues(alpha: 0.3),
+                    color: Colors.cyanAccent.withOpacity(0.3),
                   ),
                 ),
               ),
@@ -342,20 +460,20 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.1),
+                          color: Colors.white.withOpacity(0.1),
                           borderRadius: const BorderRadius.only(
                             bottomLeft: Radius.circular(32),
                             bottomRight: Radius.circular(32),
                           ),
                           border: Border(
                             bottom: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.2),
+                              color: Colors.white.withOpacity(0.2),
                               width: 1,
                             ),
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
+                              color: Colors.black.withOpacity(0.1),
                               blurRadius: 20,
                               offset: const Offset(0, 10),
                             ),
@@ -385,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         .titleLarge
                                         ?.copyWith(
                                           color: Colors.white
-                                              .withValues(alpha: 0.9),
+                                              .withOpacity(0.9),
                                           fontWeight: FontWeight.w600,
                                           letterSpacing: 1.2,
                                         ),
@@ -398,7 +516,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     padding: const EdgeInsets.only(bottom: 8),
                                     decoration: BoxDecoration(
                                       color:
-                                          Colors.white.withValues(alpha: 0.1),
+                                          Colors.white.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: TableCalendar(
@@ -433,10 +551,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                       daysOfWeekStyle: DaysOfWeekStyle(
                                         weekdayStyle: TextStyle(
                                             color: Colors.white
-                                                .withValues(alpha: 0.8)),
+                                                .withOpacity(0.8)),
                                         weekendStyle: TextStyle(
                                             color: Colors.white
-                                                .withValues(alpha: 0.8)),
+                                                .withOpacity(0.8)),
                                       ),
                                       calendarStyle: CalendarStyle(
                                         defaultTextStyle: const TextStyle(
@@ -455,7 +573,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                         todayDecoration: BoxDecoration(
                                           color: Colors.white
-                                              .withValues(alpha: 0.3),
+                                              .withOpacity(0.3),
                                           shape: BoxShape.circle,
                                         ),
                                         todayTextStyle: const TextStyle(
@@ -469,49 +587,110 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             const SizedBox(height: 24),
-                            if (!_isLoading && filteredTasks.isNotEmpty) ...[
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Progress',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
+                            // Summary Cards
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(24),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.2),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          '$completedCount/${filteredTasks.length}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                  ),
-                                  Text(
-                                    '${(progress * 100).toInt()}%',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
+                                        Text(
+                                          'Completed',
+                                          style: TextStyle(
+                                            color: Colors.white.withOpacity(0.7),
+                                            fontSize: 12,
+                                          ),
                                         ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: LinearProgressIndicator(
-                                  value: progress,
-                                  minHeight: 8,
-                                  // ignore: deprecated_member_use
-                                  backgroundColor:
-                                      // ignore: deprecated_member_use
-                                      Colors.white.withOpacity(0.2),
-                                  valueColor: const AlwaysStoppedAnimation(
-                                    Colors.white,
+                                      ],
+                                    ),
                                   ),
                                 ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(24),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.2),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          '${(progress * 100).toInt()}%',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Overall Progress',
+                                          style: TextStyle(
+                                            color: Colors.white.withOpacity(0.7),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                            // Category Filter
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: ['All', ...TaskTheme.categories].map((c) {
+                                  final isSelected = _selectedCategory == c;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ChoiceChip(
+                                      label: Text(c),
+                                      selected: isSelected,
+                                      onSelected: (selected) {
+                                        setState(() => _selectedCategory = c);
+                                      },
+                                      labelStyle: TextStyle(
+                                        color: isSelected ? Colors.black87 : Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      selectedColor: Colors.white,
+                                      backgroundColor: Colors.white.withOpacity(0.1),
+                                      side: BorderSide.none,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
                               ),
-                            ],
+                            ),
                           ],
                         ),
                       ),
@@ -524,51 +703,43 @@ class _HomeScreenState extends State<HomeScreen> {
                           )
                         : filteredTasks.isEmpty
                             ? Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(32),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            // ignore: deprecated_member_use
-                                            color:
-                                                // ignore: deprecated_member_use
-                                                Colors.black.withOpacity(0.05),
-                                            blurRadius: 20,
-                                            offset: const Offset(0, 10),
-                                          ),
-                                        ],
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(32),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withOpacity(0.05),
+                                              blurRadius: 20,
+                                              offset: const Offset(0, 10),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Icon(
+                                          Icons.rocket_launch_rounded,
+                                          size: 64,
+                                          color: Theme.of(context).primaryColor.withOpacity(0.5),
+                                        ),
                                       ),
-                                      child: Icon(
-                                        Icons.task_alt_rounded,
-                                        size: 64,
-                                        color: Colors.grey[300],
+                                      const SizedBox(height: 24),
+                                      Text(
+                                        _selectedCategory == 'All' 
+                                          ? 'Ready to conquer the day?\nTap + to add a new task.'
+                                          : 'No ${_selectedCategory.toLowerCase()} tasks yet.\nTime to plan ahead!',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Colors.grey[500],
+                                          fontSize: 16,
+                                          height: 1.5,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    Text(
-                                      'All caught up!',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: const Color(0xFF2D3142),
-                                          ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Create a task to get started',
-                                      style: TextStyle(
-                                        color: Colors.grey[500],
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               )
                             : ListView.separated(
