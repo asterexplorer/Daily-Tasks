@@ -45,13 +45,13 @@ class TaskTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
           border: Border.all(
-            color: task.isCompleted ? Colors.transparent : Colors.grey.withOpacity(0.1),
+            color: task.isCompleted ? Colors.transparent : Colors.grey.withValues(alpha: 0.1),
           ),
         ),
         child: Material(
@@ -90,7 +90,7 @@ class TaskTile extends StatelessWidget {
                                           ? TextDecoration.lineThrough
                                           : null,
                                       color: task.isCompleted
-                                          ? Colors.grey.withOpacity(0.5)
+                                          ? Colors.grey.withValues(alpha: 0.5)
                                           : MoodTheme.getTextColor(task.mood),
                                     ),
                               ),
@@ -105,7 +105,7 @@ class TaskTile extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: (task.mood == 'default' 
                                   ? (TaskTheme.categoryColors[task.category] ?? Colors.grey)
-                                  : Colors.white).withOpacity(0.1),
+                                  : Colors.white).withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Row(
@@ -116,7 +116,7 @@ class TaskTile extends StatelessWidget {
                                     size: 12,
                                     color: task.mood == 'default' 
                                       ? TaskTheme.categoryColors[task.category] 
-                                      : Colors.white.withOpacity(0.8),
+                                      : Colors.white.withValues(alpha: 0.8),
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
@@ -126,7 +126,7 @@ class TaskTile extends StatelessWidget {
                                       fontWeight: FontWeight.bold,
                                       color: task.mood == 'default' 
                                         ? TaskTheme.categoryColors[task.category] 
-                                        : Colors.white.withOpacity(0.8),
+                                        : Colors.white.withValues(alpha: 0.8),
                                     ),
                                   ),
                                 ],
@@ -136,14 +136,14 @@ class TaskTile extends StatelessWidget {
                             Icon(
                               Icons.access_time_rounded,
                               size: 12,
-                              color: MoodTheme.getTextColor(task.mood).withOpacity(0.5),
+                              color: MoodTheme.getTextColor(task.mood).withValues(alpha: 0.5),
                             ),
                             const SizedBox(width: 4),
                             Text(
                               DateFormat('h:mm a').format(task.timestamp),
                               style: TextStyle(
                                 fontSize: 11,
-                                color: MoodTheme.getTextColor(task.mood).withOpacity(0.5),
+                                color: MoodTheme.getTextColor(task.mood).withValues(alpha: 0.5),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -166,7 +166,7 @@ class TaskTile extends StatelessWidget {
     return PopupMenuButton<String>(
       icon: Icon(
         Icons.more_vert_rounded,
-        color: MoodTheme.getTextColor(task.mood).withOpacity(0.4),
+        color: MoodTheme.getTextColor(task.mood).withValues(alpha: 0.4),
       ),
       onSelected: (value) {
         if (value == 'edit') {
